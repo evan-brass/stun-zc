@@ -1,11 +1,10 @@
-use eyre::{Result, eyre};
-use crate::attr::StunAttr;
+use crate::attr::{StunAttr, AttrContext};
 
 #[derive(Debug, Clone)]
 pub enum StunAttrs<'i> {
 	Parse {
 		buff: &'i [u8],
-		xor_bytes: &'i [u8; 16]
+		header: &'i [u8; 20]
 	},
 	List(&'i [StunAttr<'i>]),
 	// Flat(&'i StunAttrsFlat<'i>) // TODO: Add?
@@ -23,23 +22,29 @@ impl<'i> StunAttrs<'i> {
 			}
 		}
 	}
-	pub fn encode(&self, mut buff: &mut [u8], xor_bytes: &[u8; 16]) {
+	pub fn encode(&self, buff: &mut [u8], header: &[u8; 20]) {
 		match self {
 			Self::Parse { buff: parse, ..} => buff.copy_from_slice(parse),
-			Self::List(l) => for attr in l.iter() {
-				attr.encode(buff, xor_bytes);
+			Self::List(l) => {
+				let mut length = 0;
+				let (mut attrs_prefix, mut to_write) = buff.split_at_mut(length);
+				for attr in l.iter() {
+					let ctx = AttrContext { header, attrs_prefix, attr_len: attr.len(), zero_xor_bytes: false };
+					attr.encode(to_write, ctx);
 
-				buff = &mut buff[attr.len() as usize..];
+					length += attr.len() as usize;
+					(attrs_prefix, to_write) = buff.split_at_mut(length);
+				}
 			}
 		}
 	}
 }
 impl<'i, 'a> IntoIterator for &'a StunAttrs<'i> {
-	type Item = Result<StunAttr<'i>>;
+	type Item = Option<StunAttr<'i>>;
 	type IntoIter = StunAttrsIter<'i, 'a>;
 	fn into_iter(self) -> Self::IntoIter {
 		match self {
-			StunAttrs::Parse { buff, xor_bytes } => StunAttrsIter::Parse { buff, xor_bytes },
+			StunAttrs::Parse { buff, header } => StunAttrsIter::Parse { buff, header, length: 0 },
 			StunAttrs::List(l) => StunAttrsIter::List(l.into_iter())
 		}
 	}
@@ -52,29 +57,33 @@ impl<'i> From<&'i [StunAttr<'i>]> for StunAttrs<'i> {
 
 pub enum StunAttrsIter<'i, 'a> {
 	Parse {
+		header: &'i [u8; 20],
 		buff: &'i [u8],
-		xor_bytes: &'i [u8; 16]
+		length: usize
 	},
 	List(std::slice::Iter<'a, StunAttr<'i>>)
 }
 impl<'i, 'a> Iterator for StunAttrsIter<'i, 'a> {
-	type Item = Result<StunAttr<'i>>;
+	type Item = Option<StunAttr<'i>>;
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
-			Self::List(i) => i.next().map(|a| Ok(a.clone())),
-			Self::Parse { buff, xor_bytes } => {
-				if buff.len() < 4 { return None; }
-				let typ = u16::from_be_bytes(buff[0..][..2].try_into().unwrap());
-				let len = u16::from_be_bytes(buff[2..][..2].try_into().unwrap());
-				let ret = Some(if buff.len() - 4 < len as usize {
-					Err(eyre!("STUN attribute is too big"))
-				} else {
-					let data = &buff[4..][..len as usize];
-					StunAttr::parse(typ, data, *xor_bytes)
+			Self::List(i) => i.next().map(|a| Some(a.clone())),
+			Self::Parse { buff, header, length } => {
+				let (attrs_prefix, unread) = buff.split_at(*length);
+				if unread.len() < 4 { return None; }
+				let typ = u16::from_be_bytes(unread[0..][..2].try_into().unwrap());
+				let attr_length = u16::from_be_bytes(unread[2..][..2].try_into().unwrap());
+				let attr_len = 4 + attr_length;
+				let ret = Some(if unread.len() < attr_len as usize { None } else {
+					let ctx = AttrContext{ header, attrs_prefix, attr_len, zero_xor_bytes: false };
+					let data = &buff[4..][..attr_length as usize];
+					StunAttr::decode(typ, data, ctx)
 				});
-				let mut padded_len = len;
+				
+				let mut padded_len = attr_len;
 				while padded_len % 4 != 0 { padded_len += 1; }
-				*buff = &buff[(4 + padded_len as usize)..];
+				*length = *length + padded_len as usize;
+
 				ret
 			}
 		}

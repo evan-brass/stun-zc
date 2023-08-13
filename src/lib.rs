@@ -61,10 +61,13 @@ pub struct Stun<'i> {
 	pub attrs: StunAttrs<'i>,
 }
 impl<'i> Stun<'i> {
-	pub fn decode(_buff: &'i [u8], _auth: StunAuth<'_>) -> Result<Self> {
+	pub fn len(&self) -> usize {
 		todo!();
 	}
-	pub fn encode(&self, _buff: &mut [u8], _auth: StunAuth<'_>) -> Result<usize> {
+	pub fn decode(_buff: &'i [u8]) -> Result<Self> {
+		todo!();
+	}
+	pub fn encode(&self, _buff: &mut [u8]) -> Result<usize> {
 		todo!();
 	}
 }
