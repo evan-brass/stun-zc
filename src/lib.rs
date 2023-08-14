@@ -2,7 +2,8 @@ use attr::StunAttrDecodeErr;
 
 pub mod attr;
 pub mod attrs;
-use attrs::StunAttrs;
+use attrs::{StunAttrs, StunAttrsIter};
+use attr::StunAttr;
 
 #[derive(Debug, Clone)]
 pub enum StunDecodeErr {
@@ -74,6 +75,20 @@ impl<'i> Stun<'i> {
 	pub fn len(&self) -> usize {
 		20 + self.attrs.length() as usize
 	}
+	pub fn res(&self, attrs: &'i [StunAttr<'i>]) -> Self {
+		Self {
+			typ: StunTyp::Res(self.typ.method()),
+			txid: self.txid,
+			attrs: attrs.into()
+		}
+	}
+	pub fn err(&self, attrs: &'i [StunAttr<'i>]) -> Self {
+		Self {
+			typ: StunTyp::Err(self.typ.method()),
+			txid: self.txid,
+			attrs: attrs.into()
+		}
+	}
 	pub fn decode(buff: &'i [u8]) -> Result<Self, StunDecodeErr> {
 		if buff.len() < 20 { return Err(StunDecodeErr::PacketTooSmall) }
 		let typ = StunTyp::try_from(<[u8; 2]>::try_from(&buff[0..][..2]).unwrap())?;
@@ -104,5 +119,36 @@ impl<'i> Stun<'i> {
 		let (header, buff) = buff.split_at_mut(20);
 		let header = <&[u8; 20]>::try_from(&*header).unwrap();
 		self.attrs.encode(buff, header)
+	}
+}
+
+impl<'i, 'a> IntoIterator for &'a Stun<'i> {
+	type Item = StunAttr<'i>;
+	type IntoIter = StunIter<'i, 'a>;
+	fn into_iter(self) -> Self::IntoIter {
+		StunIter {
+			integrity: false,
+			fingerprint: false,
+			attrs: self.attrs.into_iter()
+		}
+	}
+}
+pub struct StunIter<'i, 'a> {
+	integrity: bool,
+	fingerprint: bool,
+	attrs: StunAttrsIter<'i, 'a>
+}
+impl<'i, 'a> Iterator for StunIter<'i, 'a> {
+	type Item = StunAttr<'i>;
+	fn next(&mut self) -> Option<Self::Item> {
+		let attr = self.attrs.next()?.unwrap();
+		match attr {
+			_ if self.fingerprint => return None,
+			StunAttr::Fingerprint => self.fingerprint = true,
+			_ if self.integrity => return None,
+			StunAttr::Integrity(_) => self.integrity = true,
+			_ => {}
+		}
+		Some(attr)
 	}
 }
