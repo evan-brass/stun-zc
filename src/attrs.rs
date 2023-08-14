@@ -10,7 +10,7 @@ pub enum StunAttrs<'i> {
 	// Flat(&'i StunAttrsFlat<'i>) // TODO: Add?
 }
 impl<'i> StunAttrs<'i> {
-	pub fn len(&self) -> u16 {
+	pub fn length(&self) -> u16 {
 		match self {
 			Self::Parse { buff, .. } => buff.len() as u16,
 			Self::List(l) => {
