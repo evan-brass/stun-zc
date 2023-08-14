@@ -256,6 +256,26 @@ impl<V> From<V> for ZeroXor<V> {
 		Self(value)
 	}
 }
+#[derive(Debug, Clone)]
+pub struct Fingerprint;
+impl StunAttrValue<'_> for Fingerprint {
+	fn length(&self) -> u16 {
+		0u32.length()
+	}
+	fn decode(buff: &'_ [u8], ctx: AttrContext<'_>) -> Option<Self> where Self: Sized {
+		let actual = u32::decode(buff, ctx.clone())?;
+		let mut hasher = crc32fast::Hasher::new();
+		ctx.reduce_over_prefix(|buf| hasher.update(buf));
+		let expected = hasher.finalize() ^ 0x5354554e;
+		if expected == actual { Some(Self) } else { None }
+	}
+	fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>) {
+		let mut hasher = crc32fast::Hasher::new();
+		ctx.reduce_over_prefix(|buf| hasher.update(buf));
+		let actual = hasher.finalize() ^ 0x5354554e;
+		actual.encode(buff, ctx)
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum StunAttr<'i> {
@@ -270,7 +290,7 @@ pub enum StunAttr<'i> {
 	/* 0x0020 */ XMapped(SocketAddr),
 	/* 0x8022 */ Software(&'i str),
 	/* 0x8023 */ AlternateServer(SocketAddr),
-	/* 0x8028 */ Fingerprint(u32),
+	/* 0x8028 */ Fingerprint,
 
 	// RFC 5766:
 	/* 0x000C */ Channel(u32),
@@ -304,7 +324,7 @@ impl<'i> StunAttr<'i> {
 			Self::XMapped(_) => 0x0020,
 			Self::Software(_) => 0x8022,
 			Self::AlternateServer(_) => 0x8023,
-			Self::Fingerprint(_) => 0x8028,
+			Self::Fingerprint => 0x8028,
 			Self::Channel(_) => 0x000C,
 			Self::Lifetime(_) => 0x000D,
 			Self::XPeer(_) => 0x0012,
@@ -334,7 +354,7 @@ impl<'i> StunAttr<'i> {
 			Self::XMapped(v) => v,
 			Self::Software(v) => v,
 			Self::AlternateServer(v) => v,
-			Self::Fingerprint(v) => v,
+			Self::Fingerprint => &Fingerprint,
 			Self::Channel(v) => v,
 			Self::Lifetime(v) => v,
 			Self::XPeer(v) => v,
@@ -372,7 +392,10 @@ impl<'i> StunAttr<'i> {
 			0x0020 => Self::XMapped(StunAttrValue::decode(buff, ctx)?),
 			0x8022 => Self::Software(StunAttrValue::decode(buff, ctx)?),
 			0x8023 => Self::AlternateServer(StunAttrValue::decode(buff, ctx)?),
-			0x8028 => Self::Fingerprint(StunAttrValue::decode(buff, ctx)?),
+			0x8028 => {
+				Fingerprint::decode(buff, ctx)?;
+				Self::Fingerprint
+			},
 			0x000C => Self::Channel(StunAttrValue::decode(buff, ctx)?),
 			0x000D => Self::Lifetime(StunAttrValue::decode(buff, ctx)?),
 			0x0012 => Self::XPeer(StunAttrValue::decode(buff, ctx)?),
@@ -380,13 +403,19 @@ impl<'i> StunAttr<'i> {
 			0x0016 => Self::XRelayed(StunAttrValue::decode(buff, ctx)?),
 			0x0018 => Self::EvenPort(StunAttrValue::decode(buff, ctx)?),
 			0x0019 => Self::RequestedTransport(StunAttrValue::decode(buff, ctx)?),
-			0x001A if <()>::decode(buff, ctx.clone()).is_some() => Self::DontFragment,
+			0x001A => {
+				<()>::decode(buff, ctx.clone())?;
+				Self::DontFragment
+			},
 			0x0022 => Self::ReservationToken(StunAttrValue::decode(buff, ctx)?),
 			0x0024 => Self::Priority(StunAttrValue::decode(buff, ctx)?),
-			0x0025 if <()>::decode(buff, ctx.clone()).is_some() => Self::UseCandidate,
+			0x0025 => {
+				<()>::decode(buff, ctx.clone())?;
+				Self::UseCandidate
+			},
 			0x8029 => Self::IceControlled(StunAttrValue::decode(buff, ctx)?),
 			0x802A => Self::IceControlling(StunAttrValue::decode(buff, ctx)?),
-			_ => return None
+			typ => Self::Other(typ, buff)
 		})
 	}
 }
