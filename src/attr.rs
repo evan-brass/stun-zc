@@ -1,5 +1,8 @@
 use std::{net::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, str::Utf8Error, array::TryFromSliceError};
 
+use hmac::Mac;
+use sha1::Sha1;
+
 #[derive(Debug, Clone)]
 pub enum StunAttrDecodeErr {
 	AttrLengthExceedsPacketLength,
@@ -311,13 +314,56 @@ impl StunAttrValue<'_> for Fingerprint {
 		actual.encode(buff, ctx)
 	}
 }
+#[derive(Debug, Clone)]
+pub enum Integrity<'i> {
+	Check {
+		val: &'i [u8; 20],
+		ctx: AttrContext<'i>
+	},
+	Set {
+		key_data: &'i [u8]
+	}
+}
+impl<'i> Integrity<'i> {
+	pub fn verify(&self, key_data: &[u8]) -> bool {
+		match self {
+			Self::Set { key_data: actual_key_data } => key_data == *actual_key_data,
+			Self::Check { val: actual, ctx } => {
+				let mut hmac = hmac::Hmac::<Sha1>::new_from_slice(key_data).expect("bad key_data");
+				ctx.reduce_over_prefix(|buf| hmac.update(buf));
+				let expected = hmac.finalize().into_bytes();
+				expected.as_slice() == actual.as_slice()
+			}
+		}
+	}
+}
+impl<'i> StunAttrValue<'i> for Integrity<'i> {
+	fn length(&self) -> u16 {
+		20
+	}
+	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> where Self: Sized {
+		let val = <&[u8; 20]>::decode(buff, ctx.clone())?;
+		Ok(Self::Check { val, ctx })
+	}
+	fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>) {
+		match self {
+			Self::Check { val, .. } => val.encode(buff, ctx),
+			Self::Set { key_data } => {
+				let mut hmac = hmac::Hmac::<Sha1>::new_from_slice(key_data).expect("Unable to create Hmac key");
+				ctx.reduce_over_prefix(|buf| hmac.update(buf));
+				let actual = hmac.finalize().into_bytes();
+				<&[u8; 20]>::try_from(actual.as_slice()).unwrap().encode(buff, ctx);
+			}
+		}
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum StunAttr<'i> {
 	// RFC 5389:
 	/* 0x0001 */ Mapped(ZeroXor<SocketAddr>),
 	/* 0x0006 */ Username(&'i str),
-	/* 0x0008 */ Integrity(&'i [u8; 20]),
+	/* 0x0008 */ Integrity(Integrity<'i>),
 	/* 0x0009 */ Error(Error<'i>),
 	/* 0x000A */ UnknownAttributes(UnknownAttributes<'i>),
 	/* 0x0014 */ Realm(&'i str),
