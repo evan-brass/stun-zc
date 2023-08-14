@@ -3,11 +3,11 @@ use stun_zc::{Stun, StunTyp, attr::StunAttr};
 
 fn main() -> Result<()> {
 	let sock = std::net::UdpSocket::bind("[::]:3478")?;
-	let mut read_buff = [0u8; 4096];
-	let mut write_buff = [0u8; 4096];
+	let mut recv_buff = [0u8; 4096];
+	let mut send_buff = [0u8; 4096];
 	loop {
-		let (len, addr) = sock.recv_from(&mut read_buff)?;
-		let res = Stun::decode(&read_buff[..len]);
+		let (len, addr) = sock.recv_from(&mut recv_buff)?;
+		let res = Stun::decode(&recv_buff[..len]);
 		let m = match res {
 			Err(e) => { eprintln!("{e:?}"); continue },
 			Ok(m) => m
@@ -25,10 +25,8 @@ fn main() -> Result<()> {
 					StunAttr::Software("stun-zc: stun.rs"),
 					StunAttr::Fingerprint
 				];
-				let r = m.res(&attrs);
-				if r.len() > write_buff.len() { eprintln!("Response is too big for the output buffer!"); continue; }
-				r.encode(&mut write_buff);
-				sock.send_to(&write_buff[..r.len()], addr)?;
+				let len = m.res(&attrs).encode(&mut send_buff).expect("Couldn't fit a BindingResponse in 4kb?");
+				sock.send_to(&send_buff[..len], addr)?;
 			},
 			_ => { continue }
 		}

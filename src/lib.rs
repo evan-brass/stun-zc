@@ -112,14 +112,18 @@ impl<'i> Stun<'i> {
 
 		Ok(Self { typ, txid, attrs })
 	}
-	pub fn encode(&self, buff: &mut [u8]) {
+	pub fn encode(&self, buff: &mut [u8]) -> Option<usize> {
+		let length = self.attrs.length();
+		let len = 20 + length as usize;
+		if buff.len() < len { return None; }
 		buff[0..][..2].copy_from_slice(&<[u8; 2]>::from(&self.typ));
-		buff[2..][..2].copy_from_slice(&self.attrs.length().to_be_bytes());
+		buff[2..][..2].copy_from_slice(&length.to_be_bytes());
 		buff[4..][..4].copy_from_slice(&0x2112A442u32.to_be_bytes());
 		buff[8..][..12].copy_from_slice(self.txid);
 		let (header, buff) = buff.split_at_mut(20);
 		let header = <&[u8; 20]>::try_from(&*header).unwrap();
-		self.attrs.encode(buff, header)
+		self.attrs.encode(buff, header);
+		Some(len)
 	}
 }
 
