@@ -454,12 +454,19 @@ impl<'i> StunAttr<'i> {
 		self.value().length()
 	}
 	pub fn len(&self) -> u16 {
-		4 + self.length()
+		let mut ret = 4 + self.length();
+		while ret % 4 != 0 { ret += 1; }
+		ret
 	}
 	pub fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>) {
 		buff[0..][..2].copy_from_slice(&self.typ().to_be_bytes());
 		buff[2..][..2].copy_from_slice(&self.length().to_be_bytes());
-		self.value().encode(&mut buff[4..], ctx);
+		let mut length = self.length();
+		self.value().encode(&mut buff[4..][..length as usize], ctx);
+		while length % 4 != 0 {
+			buff[4 + length as usize] = 0;
+			length += 1;
+		}
 	}
 	pub fn decode(typ: u16, buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> {
 		Ok(match typ {
