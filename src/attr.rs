@@ -50,22 +50,35 @@ pub trait StunAttrValue<'i> {
 	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> where Self: Sized;
 }
 
+// This might not be exactly the same as IpAddr::to_canonical, but whatevs
+fn to_canonical(ip: IpAddr) -> IpAddr {
+	if let IpAddr::V6(v6) = ip {
+		if let Some(v4) = v6.to_ipv4_mapped() {
+			return IpAddr::V4(v4);
+		}
+	}
+	ip
+}
 impl StunAttrValue<'_> for SocketAddr {
 	fn length(&self) -> u16 {
-		match self {
-			Self::V4(_) => 8,
-			Self::V6(_) => 20,
+		match to_canonical(self.ip()) {
+			IpAddr::V4(_) => 8,
+			IpAddr::V6(_) => 20,
 		}
 	}
 	fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>) {
 		let xor_bytes = ctx.xor_bytes();
 		buff[0] = 0;
-		let family = if self.is_ipv4() { 0x01 } else { 0x02 };
+		let ip = to_canonical(self.ip());
+		let family = match ip {
+			IpAddr::V4(_) => 0x01,
+			IpAddr::V6(_) => 0x02
+		};
 		buff[1] = family;
 		let port = self.port().to_be_bytes();
 		let xport: [u8; 2] = std::array::from_fn(|i| port[i] ^ xor_bytes[i]);
 		buff[2..][..2].copy_from_slice(&xport);
-		match self.ip() {
+		match ip {
 			IpAddr::V4(ip) => {
 				let octs = ip.octets();
 				let xocts: [u8; 4] = std::array::from_fn(|i| octs[i] ^ xor_bytes[i]);

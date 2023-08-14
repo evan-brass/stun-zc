@@ -29,8 +29,9 @@ impl<'i> StunAttrs<'i> {
 				let mut length = 0;
 				let (mut attrs_prefix, mut to_write) = buff.split_at_mut(length);
 				for attr in l.iter() {
-					let ctx = AttrContext { header, attrs_prefix, attr_len: attr.len(), zero_xor_bytes: false };
-					attr.encode(to_write, ctx);
+					let attr_len = attr.len();
+					let ctx = AttrContext { header, attrs_prefix, attr_len, zero_xor_bytes: false };
+					attr.encode(&mut to_write[..attr_len as usize], ctx);
 
 					length += attr.len() as usize;
 					(attrs_prefix, to_write) = buff.split_at_mut(length);

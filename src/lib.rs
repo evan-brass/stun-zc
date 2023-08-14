@@ -66,6 +66,7 @@ impl From<&StunTyp> for [u8; 2] {
 	}
 }
 
+#[derive(Debug, Clone)]
 pub struct Stun<'i> {
 	pub typ: StunTyp,
 	pub txid: &'i [u8; 12],
