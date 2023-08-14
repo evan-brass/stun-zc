@@ -1,4 +1,4 @@
-use crate::attr::{StunAttr, AttrContext};
+use crate::attr::{StunAttr, AttrContext, StunAttrDecodeErr};
 
 #[derive(Debug, Clone)]
 pub enum StunAttrs<'i> {
@@ -40,7 +40,7 @@ impl<'i> StunAttrs<'i> {
 	}
 }
 impl<'i, 'a> IntoIterator for &'a StunAttrs<'i> {
-	type Item = Option<StunAttr<'i>>;
+	type Item = Result<StunAttr<'i>, StunAttrDecodeErr>;
 	type IntoIter = StunAttrsIter<'i, 'a>;
 	fn into_iter(self) -> Self::IntoIter {
 		match self {
@@ -64,17 +64,17 @@ pub enum StunAttrsIter<'i, 'a> {
 	List(std::slice::Iter<'a, StunAttr<'i>>)
 }
 impl<'i, 'a> Iterator for StunAttrsIter<'i, 'a> {
-	type Item = Option<StunAttr<'i>>;
+	type Item = Result<StunAttr<'i>, StunAttrDecodeErr>;
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
-			Self::List(i) => i.next().map(|a| Some(a.clone())),
+			Self::List(i) => i.next().map(|a| Ok(a.clone())),
 			Self::Parse { buff, header, length } => {
 				let (attrs_prefix, unread) = buff.split_at(*length);
 				if unread.len() < 4 { return None; }
 				let typ = u16::from_be_bytes(unread[0..][..2].try_into().unwrap());
 				let attr_length = u16::from_be_bytes(unread[2..][..2].try_into().unwrap());
 				let attr_len = 4 + attr_length;
-				let ret = Some(if unread.len() < attr_len as usize { None } else {
+				let ret = Some(if unread.len() < attr_len as usize { Err(StunAttrDecodeErr::AttrLengthExceedsPacketLength) } else {
 					let ctx = AttrContext{ header, attrs_prefix, attr_len, zero_xor_bytes: false };
 					let data = &buff[4..][..attr_length as usize];
 					StunAttr::decode(typ, data, ctx)

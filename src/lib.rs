@@ -1,9 +1,19 @@
+use attr::StunAttrDecodeErr;
 use eyre::{Result, eyre};
 use std::borrow::Cow;
 
 pub mod attr;
 pub mod attrs;
 use attrs::StunAttrs;
+
+#[derive(Debug, Clone)]
+pub enum StunDecodeErr {
+	PacketTooSmall,
+	TypeOutOfRange,
+	UnalignedLength,
+	BadMagic,
+	AttrErr(StunAttrDecodeErr)
+}
 
 #[derive(Debug, Clone)]
 pub enum StunTyp {
@@ -62,12 +72,14 @@ pub struct Stun<'i> {
 }
 impl<'i> Stun<'i> {
 	pub fn len(&self) -> usize {
+		20 + self.attrs.len() as usize
+	}
+	pub fn decode(buff: &'i [u8]) -> Result<Self, StunDecodeErr> {
+		if buff.len() < 20 { return Err(StunDecodeErr::PacketTooSmall) }
+
 		todo!();
 	}
-	pub fn decode(_buff: &'i [u8]) -> Result<Self> {
-		todo!();
-	}
-	pub fn encode(&self, _buff: &mut [u8]) -> Result<usize> {
+	pub fn encode(&self, buff: &mut [u8]) {
 		todo!();
 	}
 }

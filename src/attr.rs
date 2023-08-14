@@ -1,9 +1,28 @@
-use std::net::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{net::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, str::Utf8Error, array::TryFromSliceError};
+
+#[derive(Debug, Clone)]
+pub enum StunAttrDecodeErr {
+	AttrLengthExceedsPacketLength,
+	ValueUnexpectedLength,
+	BadUtf8(Utf8Error),
+	UnexpectedLength(TryFromSliceError),
+	BadFingerprint
+}
+impl From<Utf8Error> for StunAttrDecodeErr {
+	fn from(value: Utf8Error) -> Self {
+		Self::BadUtf8(value)
+	}
+}
+impl From<TryFromSliceError> for StunAttrDecodeErr {
+	fn from(value: TryFromSliceError) -> Self {
+		Self::UnexpectedLength(value)
+	}
+}
 
 #[derive(Debug, Clone)]
 pub struct AttrContext<'i> {
 	pub header: &'i [u8; 20],
-	pub zero_xor_bytes: bool,
+	pub zero_xor_bytes: bool, // TODO: Is this ok?
 	pub attrs_prefix: &'i [u8],
 	pub attr_len: u16
 }
@@ -28,7 +47,7 @@ impl<'i> AttrContext<'i> {
 pub trait StunAttrValue<'i> {
 	fn length(&self) -> u16;
 	fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>);
-	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Option<Self> where Self: Sized; // TODO: Switch from Option<Self> to Result<Self, AttrParseErr>
+	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> where Self: Sized;
 }
 
 impl StunAttrValue<'_> for SocketAddr {
@@ -59,9 +78,9 @@ impl StunAttrValue<'_> for SocketAddr {
 			}
 		}
 	}
-	fn decode(buff: &[u8], ctx: AttrContext<'_>) -> Option<Self> {
+	fn decode(buff: &[u8], ctx: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
 		let xor_bytes = ctx.xor_bytes();
-		if buff.len() < 8 { return None }
+		if buff.len() < 8 { return Err(StunAttrDecodeErr::ValueUnexpectedLength) }
 
 		let family = buff[1];
 		let xport = &buff[2..][..2];
@@ -71,9 +90,9 @@ impl StunAttrValue<'_> for SocketAddr {
 		let ip = match (family, xip.len()) {
 			(0x01, 4) => Ipv4Addr::from(std::array::from_fn(|i| xip[i] ^ xor_bytes[i])).into(),
 			(0x02, 16) => Ipv6Addr::from(std::array::from_fn(|i| xip[i] ^ xor_bytes[i])).into(),
-			_ => return None
+			_ => return Err(StunAttrDecodeErr::ValueUnexpectedLength)
 		};
-		Some(SocketAddr::new(ip, port))
+		Ok(SocketAddr::new(ip, port))
 	}
 }
 impl StunAttrValue<'_> for () {
@@ -81,11 +100,11 @@ impl StunAttrValue<'_> for () {
 		0
 	}
 	fn encode(&self, _: &mut [u8], _: AttrContext<'_>) {}
-	fn decode(buff: &[u8], _: AttrContext<'_>) -> Option<Self> {
+	fn decode(buff: &[u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
 		if buff.len() == 0 {
-			Some(())
+			Ok(())
 		} else {
-			None
+			Err(StunAttrDecodeErr::ValueUnexpectedLength)
 		}
 	}
 }
@@ -96,8 +115,8 @@ impl<'i> StunAttrValue<'i> for &'i str {
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff.copy_from_slice(self.as_bytes())
 	}
-	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Option<Self> {
-		std::str::from_utf8(buff).ok()
+	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		Ok(std::str::from_utf8(buff)?)
 	}
 }
 impl<'i> StunAttrValue<'i> for &'i [u8] {
@@ -107,8 +126,8 @@ impl<'i> StunAttrValue<'i> for &'i [u8] {
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff.copy_from_slice(self)
 	}
-	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Option<Self> {
-		Some(buff)
+	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		Ok(buff)
 	}
 }
 impl<'i, const N: usize> StunAttrValue<'i> for &'i [u8; N] {
@@ -118,8 +137,8 @@ impl<'i, const N: usize> StunAttrValue<'i> for &'i [u8; N] {
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff.copy_from_slice(self.as_slice())
 	}
-	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Option<Self> where Self: Sized {
-		buff.try_into().ok()
+	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> where Self: Sized {
+		Ok(buff.try_into()?)
 	}
 }
 impl StunAttrValue<'_> for u32 {
@@ -129,8 +148,8 @@ impl StunAttrValue<'_> for u32 {
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff.copy_from_slice(&self.to_be_bytes())
 	}
-	fn decode(buff: &[u8], _: AttrContext<'_>) -> Option<Self> {
-		buff.try_into().ok().map(Self::from_be_bytes)
+	fn decode(buff: &[u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		Ok(Self::from_be_bytes(buff.try_into()?))
 	}
 }
 impl StunAttrValue<'_> for u64 {
@@ -140,8 +159,8 @@ impl StunAttrValue<'_> for u64 {
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff.copy_from_slice(&self.to_be_bytes())
 	}
-	fn decode(buff: &[u8], _: AttrContext<'_>) -> Option<Self> {
-		buff.try_into().ok().map(Self::from_be_bytes)
+	fn decode(buff: &[u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		Ok(Self::from_be_bytes(buff.try_into()?))
 	}
 }
 #[derive(Debug, Clone)]
@@ -153,12 +172,12 @@ impl<'i> StunAttrValue<'i> for Error<'i> {
 	fn length(&self) -> u16 {
 		4 + self.message.len() as u16
 	}
-	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Option<Self> {
-		if buff.len() < 4 { return None }
+	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		if buff.len() < 4 { return Err(StunAttrDecodeErr::ValueUnexpectedLength) }
 
 		let code = (buff[2] * 100) as u16 + buff[3] as u16;
-		let message = std::str::from_utf8(&buff[4..]).unwrap_or("");
-		Some(Self { code, message })
+		let message = std::str::from_utf8(&buff[4..])?;
+		Ok(Self { code, message })
 	}
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff[0] = 0;
@@ -192,9 +211,12 @@ impl<'i> StunAttrValue<'i> for UnknownAttributes<'i> {
 			}
 		}
 	}
-	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Option<Self> {
-		if buff.len() % 2 != 0 { return None }
-		Some(Self::Parse(buff))
+	fn decode(buff: &'i [u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		if buff.len() % 2 != 0 { 
+			Err(StunAttrDecodeErr::ValueUnexpectedLength)
+		} else {
+			Ok(Self::Parse(buff))
+		}
 	}
 }
 #[derive(Debug, Clone)]
@@ -203,9 +225,9 @@ impl StunAttrValue<'_> for EvenPort {
 	fn length(&self) -> u16 {
 		1
 	}
-	fn decode(buff: &[u8], _: AttrContext<'_>) -> Option<Self> where Self: Sized {
-		if buff.len() != 1 { return None }
-		Some(Self(buff[0] & 0b1_0000000 != 0))
+	fn decode(buff: &[u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> where Self: Sized {
+		if buff.len() != 1 { return Err(StunAttrDecodeErr::ValueUnexpectedLength) }
+		Ok(Self(buff[0] & 0b1_0000000 != 0))
 	}
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff[0] = match self.0 {
@@ -220,9 +242,9 @@ impl StunAttrValue<'_> for RequestedTransport {
 	fn length(&self) -> u16 {
 		4
 	}
-	fn decode(buff: &[u8], _: AttrContext<'_>) -> Option<Self> where Self: Sized {
-		if buff.len() != 4 { return None }
-		Some(Self(buff[0]))
+	fn decode(buff: &[u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> where Self: Sized {
+		if buff.len() != 4 { return Err(StunAttrDecodeErr::ValueUnexpectedLength) }
+		Ok(Self(buff[0]))
 	}
 	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
 		buff[0] = self.0;
@@ -237,7 +259,7 @@ impl<'i, V: StunAttrValue<'i>> StunAttrValue<'i> for ZeroXor<V> {
 	fn length(&self) -> u16 {
 		self.0.length()
 	}
-	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Option<Self> where Self: Sized {
+	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> where Self: Sized {
 		let ctx = AttrContext{ zero_xor_bytes: true, ..ctx };
 		V::decode(buff, ctx).map(|v| Self(v))
 	}
@@ -262,12 +284,12 @@ impl StunAttrValue<'_> for Fingerprint {
 	fn length(&self) -> u16 {
 		0u32.length()
 	}
-	fn decode(buff: &'_ [u8], ctx: AttrContext<'_>) -> Option<Self> where Self: Sized {
+	fn decode(buff: &'_ [u8], ctx: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> where Self: Sized {
 		let actual = u32::decode(buff, ctx.clone())?;
 		let mut hasher = crc32fast::Hasher::new();
 		ctx.reduce_over_prefix(|buf| hasher.update(buf));
 		let expected = hasher.finalize() ^ 0x5354554e;
-		if expected == actual { Some(Self) } else { None }
+		if expected == actual { Ok(Self) } else { Err(StunAttrDecodeErr::BadFingerprint) }
 	}
 	fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>) {
 		let mut hasher = crc32fast::Hasher::new();
@@ -380,8 +402,8 @@ impl<'i> StunAttr<'i> {
 		buff[2..][..2].copy_from_slice(&self.length().to_be_bytes());
 		self.value().encode(&mut buff[4..], ctx);
 	}
-	pub fn decode(typ: u16, buff: &'i [u8], ctx: AttrContext<'i>) -> Option<Self> {
-		Some(match typ {
+	pub fn decode(typ: u16, buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> {
+		Ok(match typ {
 			0x0001 => Self::Mapped(StunAttrValue::decode(buff, ctx)?),
 			0x0006 => Self::Username(StunAttrValue::decode(buff, ctx)?),
 			0x0008 => Self::Integrity(StunAttrValue::decode(buff, ctx)?),
