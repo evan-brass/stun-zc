@@ -75,7 +75,7 @@ pub struct Stun<'i> {
 	pub attrs: StunAttrs<'i>,
 }
 impl<'i> Stun<'i> {
-	pub fn flat(&self) -> Flat {
+	pub fn flat(&self) -> Flat<'i> {
 		Flat::from_iter(self)
 	}
 	pub fn len(&self) -> usize {
