@@ -181,8 +181,8 @@ impl StunAttrValue<'_> for u64 {
 }
 #[derive(Debug, Clone)]
 pub struct Error<'i> {
-	code: u16,
-	message: &'i str
+	pub code: u16,
+	pub message: &'i str
 }
 impl<'i> StunAttrValue<'i> for Error<'i> {
 	fn length(&self) -> u16 {
