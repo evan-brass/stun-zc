@@ -77,7 +77,7 @@ impl<'i, 'a> Iterator for StunAttrsIter<'i, 'a> {
 				let attr_len = 4 + attr_length;
 				let ret = Some(if unread.len() < attr_len as usize { Err(StunAttrDecodeErr::AttrLengthExceedsPacketLength) } else {
 					let ctx = AttrContext{ header, attrs_prefix, attr_len, zero_xor_bytes: false };
-					let data = &buff[4..][..attr_length as usize];
+					let data = &unread[4..][..attr_length as usize];
 					StunAttr::decode(typ, data, ctx)
 				});
 				
