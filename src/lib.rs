@@ -73,6 +73,27 @@ pub struct Stun<'i> {
 	pub attrs: StunAttrs<'i>,
 }
 impl<'i> Stun<'i> {
+	// check_auth only works if the packet contains a username.
+	pub fn check_auth<T: AsRef<[u8]>, F: FnOnce(&str, Option<&str>) -> Option<T>>(&self, f: F) -> Option<(&'i str, T)> {
+		let mut username = None;
+		let mut realm = None;
+		let mut integrity = None;
+		for a in self {
+			match a {
+				StunAttr::Username(s) if username.is_none() => username = Some(s),
+				StunAttr::Realm(s) if realm.is_none() => realm = Some(s),
+				StunAttr::Integrity(i) => {
+					integrity = Some(i);
+					break;
+				}
+				_ => {}
+			}
+		}
+		let (username, integrity) = (username?, integrity?);
+		let password = f(username, realm)?;
+		
+		integrity.verify(password.as_ref()).then_some((username, password))
+	}
 	pub fn len(&self) -> usize {
 		20 + self.attrs.length() as usize
 	}
