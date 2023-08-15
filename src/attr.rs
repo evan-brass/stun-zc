@@ -428,6 +428,33 @@ impl<'i> StunAttrValue<'i> for Data<'i> {
 		}
 	}
 }
+#[derive(Debug, Clone)]
+pub struct Channel(u16);
+impl StunAttrValue<'_> for Channel {
+	fn length(&self) -> u16 {
+		4
+	}
+	fn decode(buff: &[u8], _: AttrContext<'_>) -> Result<Self, StunAttrDecodeErr> {
+		if buff.len() != 4 { return Err(StunAttrDecodeErr::ValueUnexpectedLength) }
+		Ok(Self(u16::from_be_bytes(buff[..2].try_into().unwrap())))
+	}
+	fn encode(&self, buff: &mut [u8], _: AttrContext<'_>) {
+		buff[..2].copy_from_slice(&self.0.to_be_bytes());
+		buff[2] = 0;
+		buff[3] = 0;
+	}
+}
+impl From<u16> for Channel {
+	fn from(value: u16) -> Self {
+		Self(value)
+	}
+}
+impl From<Channel> for u16 {
+	fn from(value: Channel) -> Self {
+		value.0
+	}
+}
+
 
 #[derive(Debug, Clone)]
 pub enum StunAttr<'i> {
@@ -441,11 +468,11 @@ pub enum StunAttr<'i> {
 	/* 0x0015 */ Nonce(&'i str),
 	/* 0x0020 */ XMapped(SocketAddr),
 	/* 0x8022 */ Software(&'i str),
-	/* 0x8023 */ AlternateServer(SocketAddr),
+	/* 0x8023 */ AlternateServer(ZeroXor<SocketAddr>),
 	/* 0x8028 */ Fingerprint,
 
 	// RFC 5766:
-	/* 0x000C */ Channel(u32),
+	/* 0x000C */ Channel(Channel),
 	/* 0x000D */ Lifetime(u32),
 	/* 0x0012 */ XPeer(SocketAddr),
 	/* 0x0013 */ Data(Data<'i>),
