@@ -2,8 +2,8 @@ use attr::StunAttrDecodeErr;
 
 pub mod attr;
 pub mod attrs;
-use attrs::{StunAttrs, StunAttrsIter};
 use attr::StunAttr;
+use attrs::{StunAttrs, StunAttrsIter};
 
 #[derive(Debug, Clone)]
 pub enum StunDecodeErr {
@@ -11,7 +11,7 @@ pub enum StunDecodeErr {
 	TypeOutOfRange,
 	UnalignedLength,
 	BadMagic,
-	AttrErr(StunAttrDecodeErr)
+	AttrErr(StunAttrDecodeErr),
 }
 
 #[derive(Debug, Clone)]
@@ -74,7 +74,10 @@ pub struct Stun<'i> {
 }
 impl<'i> Stun<'i> {
 	// check_auth only works if the packet contains a username.
-	pub fn check_auth<T: AsRef<[u8]>, F: FnOnce(&str, Option<&str>) -> Option<T>>(&self, f: F) -> Option<(&'i str, T)> {
+	pub fn check_auth<T: AsRef<[u8]>, F: FnOnce(&str, Option<&str>) -> Option<T>>(
+		&self,
+		f: F,
+	) -> Option<(&'i str, T)> {
 		let mut username = None;
 		let mut realm = None;
 		let mut integrity = None;
@@ -91,8 +94,10 @@ impl<'i> Stun<'i> {
 		}
 		let (username, integrity) = (username?, integrity?);
 		let password = f(username, realm)?;
-		
-		integrity.verify(password.as_ref()).then_some((username, password))
+
+		integrity
+			.verify(password.as_ref())
+			.then_some((username, password))
 	}
 	pub fn len(&self) -> usize {
 		20 + self.attrs.length() as usize
@@ -101,33 +106,44 @@ impl<'i> Stun<'i> {
 		Self {
 			typ: StunTyp::Res(self.typ.method()),
 			txid: self.txid,
-			attrs: attrs.into()
+			attrs: attrs.into(),
 		}
 	}
 	pub fn err(&self, attrs: &'i [StunAttr<'i>]) -> Self {
 		Self {
 			typ: StunTyp::Err(self.typ.method()),
 			txid: self.txid,
-			attrs: attrs.into()
+			attrs: attrs.into(),
 		}
 	}
 	pub fn decode(buff: &'i [u8]) -> Result<Self, StunDecodeErr> {
-		if buff.len() < 20 { return Err(StunDecodeErr::PacketTooSmall) }
+		if buff.len() < 20 {
+			return Err(StunDecodeErr::PacketTooSmall);
+		}
 		let typ = StunTyp::try_from(<[u8; 2]>::try_from(&buff[0..][..2]).unwrap())?;
-		
+
 		let length = u16::from_be_bytes((&buff[2..][..2]).try_into().unwrap());
-		if length % 4 != 0 { return Err(StunDecodeErr::UnalignedLength) }
-		if (20 + length as usize) < buff.len() { return Err(StunDecodeErr::PacketTooSmall) }
+		if length % 4 != 0 {
+			return Err(StunDecodeErr::UnalignedLength);
+		}
+		if (20 + length as usize) < buff.len() {
+			return Err(StunDecodeErr::PacketTooSmall);
+		}
 
 		let magic = u32::from_be_bytes((&buff[4..][..4]).try_into().unwrap());
-		if magic != 0x2112A442 { return Err(StunDecodeErr::BadMagic) }
+		if magic != 0x2112A442 {
+			return Err(StunDecodeErr::BadMagic);
+		}
 
 		let txid = (&buff[8..][..12]).try_into().unwrap();
 
-		let attrs = StunAttrs::Parse { buff: &buff[20..][..length as usize], header: (&buff[0..][..20]).try_into().unwrap() };
+		let attrs = StunAttrs::Parse {
+			buff: &buff[20..][..length as usize],
+			header: (&buff[0..][..20]).try_into().unwrap(),
+		};
 		for res in &attrs {
 			if let Err(e) = res {
-				return Err(StunDecodeErr::AttrErr(e))
+				return Err(StunDecodeErr::AttrErr(e));
 			}
 		}
 
@@ -136,7 +152,9 @@ impl<'i> Stun<'i> {
 	pub fn encode(&self, buff: &mut [u8]) -> Option<usize> {
 		let length = self.attrs.length();
 		let len = 20 + length as usize;
-		if buff.len() < len { return None; }
+		if buff.len() < len {
+			return None;
+		}
 		buff[0..][..2].copy_from_slice(&<[u8; 2]>::from(&self.typ));
 		buff[2..][..2].copy_from_slice(&length.to_be_bytes());
 		buff[4..][..4].copy_from_slice(&0x2112A442u32.to_be_bytes());
@@ -155,14 +173,14 @@ impl<'i, 'a> IntoIterator for &'a Stun<'i> {
 		StunIter {
 			integrity: false,
 			fingerprint: false,
-			attrs: self.attrs.into_iter()
+			attrs: self.attrs.into_iter(),
 		}
 	}
 }
 pub struct StunIter<'i, 'a> {
 	integrity: bool,
 	fingerprint: bool,
-	attrs: StunAttrsIter<'i, 'a>
+	attrs: StunAttrsIter<'i, 'a>,
 }
 impl<'i, 'a> Iterator for StunIter<'i, 'a> {
 	type Item = StunAttr<'i>;

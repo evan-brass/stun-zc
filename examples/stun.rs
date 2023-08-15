@@ -1,5 +1,5 @@
 use eyre::Result;
-use stun_zc::{Stun, StunTyp, attr::StunAttr};
+use stun_zc::{attr::StunAttr, Stun, StunTyp};
 
 fn main() -> Result<()> {
 	let sock = std::net::UdpSocket::bind("[::]:3478")?;
@@ -9,8 +9,11 @@ fn main() -> Result<()> {
 		let (len, addr) = sock.recv_from(&mut recv_buff)?;
 		let res = Stun::decode(&recv_buff[..len]);
 		let m = match res {
-			Err(e) => { eprintln!("{e:?}"); continue },
-			Ok(m) => m
+			Err(e) => {
+				eprintln!("{e:?}");
+				continue;
+			}
+			Ok(m) => m,
 		};
 		println!("{addr} {:?} {:?}", m.typ, m.txid);
 		for a in &m {
@@ -23,12 +26,15 @@ fn main() -> Result<()> {
 					// StunAttr::Mapped(addr.into()),
 					StunAttr::XMapped(addr),
 					StunAttr::Software("stun-zc: stun.rs"),
-					StunAttr::Fingerprint
+					StunAttr::Fingerprint,
 				];
-				let len = m.res(&attrs).encode(&mut send_buff).expect("Couldn't fit a BindingResponse in 4kb?");
+				let len = m
+					.res(&attrs)
+					.encode(&mut send_buff)
+					.expect("Couldn't fit a BindingResponse in 4kb?");
 				sock.send_to(&send_buff[..len], addr)?;
-			},
-			_ => { continue }
+			}
+			_ => continue,
 		}
 	}
 }
