@@ -30,6 +30,22 @@ pub struct Flat<'i> {
 	pub ice_controlled: Option<u64>,
 	pub ice_controlling: Option<u64>
 }
+impl<'i> Flat<'i> {
+	// check_auth only works if the packet contains a username.
+	pub fn check_auth<T: AsRef<[u8]>, F: FnOnce(&str, Option<&str>) -> Option<T>>(
+		&self,
+		f: F,
+	) -> Option<(&'i str, T)> {
+		let username = self.username?;
+		let realm = self.realm;
+		let integrity = self.integrity.clone()?;
+		let password = f(username, realm)?;
+
+		integrity
+			.verify(password.as_ref())
+			.then_some((username, password))
+	}
+}
 impl<'i> FromIterator<StunAttr<'i>> for Flat<'i> {
 	fn from_iter<T: IntoIterator<Item = StunAttr<'i>>>(iter: T) -> Self {
 		let mut mapped = None;
