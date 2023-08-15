@@ -3,6 +3,7 @@ use std::{
 	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 	str::Utf8Error,
 };
+use super::Stun;
 
 use hmac::Mac;
 use sha1::Sha1;
@@ -404,6 +405,29 @@ impl<'i> StunAttrValue<'i> for Integrity<'i> {
 		}
 	}
 }
+#[derive(Debug, Clone)]
+pub enum Data<'i> {
+	Slice(&'i [u8]),
+	Nested(Stun<'i>)
+}
+impl<'i> StunAttrValue<'i> for Data<'i> {
+	fn length(&self) -> u16 {
+		match self {
+			Self::Slice(s) => s.len() as u16,
+			Self::Nested(m) => m.len() as u16
+		}
+	}
+	fn decode(buff: &'i [u8], ctx: AttrContext<'i>) -> Result<Self, StunAttrDecodeErr> {
+		let s = <&[u8]>::decode(buff, ctx)?;
+		Ok(Self::Slice(s))
+	}
+	fn encode(&self, buff: &mut [u8], ctx: AttrContext<'_>) {
+		match self {
+			Self::Slice(s) => s.encode(buff, ctx),
+			Self::Nested(m) => { m.encode(buff); }
+		}
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum StunAttr<'i> {
@@ -424,7 +448,7 @@ pub enum StunAttr<'i> {
 	/* 0x000C */ Channel(u32),
 	/* 0x000D */ Lifetime(u32),
 	/* 0x0012 */ XPeer(SocketAddr),
-	/* 0x0013 */ Data(&'i [u8]),
+	/* 0x0013 */ Data(Data<'i>),
 	/* 0x0016 */ XRelayed(SocketAddr),
 	/* 0x0018 */ EvenPort(EvenPort),
 	/* 0x0019 */ RequestedTransport(RequestedTransport),
