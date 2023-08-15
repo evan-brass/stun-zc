@@ -3,6 +3,8 @@ use attr::StunAttrDecodeErr;
 pub mod attr;
 pub mod attrs;
 use attr::StunAttr;
+use attrs::flat;
+use attrs::flat::Flat;
 use attrs::{StunAttrs, StunAttrsIter};
 
 #[derive(Debug, Clone)]
@@ -73,6 +75,9 @@ pub struct Stun<'i> {
 	pub attrs: StunAttrs<'i>,
 }
 impl<'i> Stun<'i> {
+	pub fn flat(&self) -> Flat {
+		Flat::from_iter(self)
+	}
 	// check_auth only works if the packet contains a username.
 	pub fn check_auth<T: AsRef<[u8]>, F: FnOnce(&str, Option<&str>) -> Option<T>>(
 		&self,

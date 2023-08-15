@@ -1,5 +1,7 @@
 use crate::attr::{AttrContext, StunAttr, StunAttrDecodeErr};
 
+pub mod flat;
+
 #[derive(Debug, Clone)]
 pub enum StunAttrs<'i> {
 	Parse {

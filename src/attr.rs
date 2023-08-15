@@ -250,7 +250,7 @@ impl<'i> StunAttrValue<'i> for UnknownAttributes<'i> {
 	}
 }
 #[derive(Debug, Clone)]
-pub struct EvenPort(bool);
+pub struct EvenPort(pub bool);
 impl StunAttrValue<'_> for EvenPort {
 	fn length(&self) -> u16 {
 		1
@@ -272,7 +272,7 @@ impl StunAttrValue<'_> for EvenPort {
 	}
 }
 #[derive(Debug, Clone)]
-pub struct RequestedTransport(u8);
+pub struct RequestedTransport(pub u8);
 impl StunAttrValue<'_> for RequestedTransport {
 	fn length(&self) -> u16 {
 		4
@@ -294,7 +294,7 @@ impl StunAttrValue<'_> for RequestedTransport {
 	}
 }
 #[derive(Debug, Clone)]
-pub struct ZeroXor<V>(V);
+pub struct ZeroXor<V>(pub V);
 impl<'i, V: StunAttrValue<'i>> StunAttrValue<'i> for ZeroXor<V> {
 	fn length(&self) -> u16 {
 		self.0.length()
