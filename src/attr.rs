@@ -205,7 +205,7 @@ impl<'i> StunAttrValue<'i> for Error<'i> {
 			return Err(StunAttrDecodeErr::ValueUnexpectedLength);
 		}
 
-		let code = (buff[2] * 100) as u16 + buff[3] as u16;
+		let code = (buff[2] as u16 * 100) + buff[3] as u16;
 		let message = std::str::from_utf8(&buff[4..])?;
 		Ok(Self { code, message })
 	}

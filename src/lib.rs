@@ -3,7 +3,6 @@ use attr::StunAttrDecodeErr;
 pub mod attr;
 pub mod attrs;
 use attr::StunAttr;
-use attrs::flat;
 use attrs::flat::Flat;
 use attrs::{StunAttrs, StunAttrsIter};
 
